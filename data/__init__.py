@@ -1,5 +1,4 @@
 from .config import *
-from .coco import *
 
 import torch
 import cv2
