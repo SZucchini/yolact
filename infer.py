@@ -121,7 +121,7 @@ def prep_display_custom(dets_out, img, h, w, current_frame, undo_transform=True,
             img_gpu_masked_c = img_gpu * (mask_c.sum(dim=0) >= 1).float().expand(-1, -1, 3)
             img_numpy_c = (img_gpu_masked_c * 255).byte().cpu().numpy()
             img_output = img_numpy_c[(boxes[i,1]):(boxes[i,3]),(boxes[i,0]):(boxes[i,2])]
-            cv2.imwrite('../data/interim/yolact_output/20230202_front/crop/0202front'+ '_' +str(current_frame)+'_'+str(i)+'_'+str(boxes[i,0])+'_'+str(boxes[i,1])+'_'+str(boxes[i,2])+'_'+str(boxes[i,3])+'.jpg', img_output)
+            cv2.imwrite('../data/interim/yolact_output/20221117_front/crop/1117front'+ '_' +str(current_frame)+'_'+str(i)+'_'+str(boxes[i,0])+'_'+str(boxes[i,1])+'_'+str(boxes[i,2])+'_'+str(boxes[i,3])+'.jpg', img_output)
 
         colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
         masks_color = masks.repeat(1, 1, 1, 3) * colors * mask_alpha
