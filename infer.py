@@ -1,7 +1,7 @@
 import os
 import argparse
-from collections import defaultdict
 from pathlib import Path
+from collections import defaultdict
 
 import cv2
 import torch
@@ -17,17 +17,24 @@ from layers.output_utils import postprocess, undo_image_transformation
 iou_thresholds = [x / 100 for x in range(50, 100, 5)]
 color_cache = defaultdict(lambda: {})
 
+
 def str2bool(v):
-    if v.lower() in ('yes', 'true', 't', 'y', '1'): return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'): return False
-    else: raise argparse.ArgumentTypeError('Boolean value expected.')
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description='YOLACT COCO Evaluation')
-    parser.add_argument('--trained_model',
-                        default='weights/ssd300_mAP_77.43_v2.pth', type=str,
-                        help='Trained state_dict file path to open. If "interrupt", this will open the interrupt file.')
+    parser.add_argument('--trained_model', default='weights/ssd300_mAP_77.43_v2.pth', type=str,
+                        help="""
+                        Trained state_dict file path to open.
+                        If "interrupt", this will open the interrupt file.
+                        """)
     parser.add_argument('--top_k', default=5, type=int,
                         help='Further restrict the number of predictions to parse')
     parser.add_argument('--cuda', default=True, type=str2bool,
@@ -45,29 +52,49 @@ def parse_args(argv=None):
     parser.add_argument('--config', default=None,
                         help='The config object to use.')
     parser.add_argument('--display_lincomb', default=False, type=str2bool,
-                        help='If the config uses lincomb masks, output a visualization of how those masks are created.')
-    parser.add_argument('--mask_proto_debug', default=False, dest='mask_proto_debug', action='store_true',
-                        help='Outputs stuff for scripts/compute_mask.py.')
+                        help="""
+                        If the config uses lincomb masks,
+                        output a visualization of how those masks are created.
+                        """)
+    parser.add_argument('--mask_proto_debug', default=False, dest='mask_proto_debug',
+                        action='store_true', help='Outputs stuff for scripts/compute_mask.py.')
     parser.add_argument('--image', default=None, type=str,
                         help='A path to an image to use for display.')
     parser.add_argument('--images', default=None, type=str,
-                        help='An input folder of images and output folder to save detected images. Should be in the format input->output.')
+                        help="""
+                        An input folder of images and output folder to save detected images.
+                        Should be in the format input->output.
+                        """)
     parser.add_argument('--video', default=None, type=str,
-                        help='A path to a video to evaluate on. Passing in a number will use that index webcam.')
+                        help="""
+                        A path to a video to evaluate on.
+                        Passing in a number will use that index webcam.
+                        """)
     parser.add_argument('--score_threshold', default=0, type=float,
-                        help='Detections with a score under this threshold will not be considered. This currently only works in display mode.')
+                        help="""
+                        Detections with a score under this threshold will not be considered.
+                        This currently only works in display mode.
+                        """)
     parser.add_argument('--detect', default=False, dest='detect', action='store_true',
-                        help='Don\'t evauluate the mask branch at all and only do object detection. This only works for --display and --benchmark.')
+                        help="""
+                        Don\'t evauluate the mask branch at all and only do object detection.
+                        This only works for --display and --benchmark.
+                        """)
     parser.add_argument('--display_fps', default=False, dest='display_fps', action='store_true',
                         help='When displaying / saving video, draw the FPS on the frame')
 
-    parser.set_defaults(no_hash=False, mask_proto_debug=False, crop=True, detect=False, display_fps=False,
-                        emulate_playback=False)
+    parser.set_defaults(no_hash=False, mask_proto_debug=False, crop=True, detect=False,
+                        display_fps=False, emulate_playback=False)
 
     global args
     args = parser.parse_args(argv)
 
-def prep_display_custom(dets_out, img, h, w, current_frame, undo_transform=True, class_color=False, mask_alpha=0.45, fps_str='',):
+
+def prep_display_custom(dets_out, img, h, w, current_frame, output_path,
+                        undo_transform=True,
+                        class_color=False,
+                        mask_alpha=0.45,
+                        fps_str='',):
 
     if undo_transform:
         img_numpy = undo_image_transformation(img, w, h)
@@ -79,16 +106,16 @@ def prep_display_custom(dets_out, img, h, w, current_frame, undo_transform=True,
     with timer.env('Postprocess'):
         save = cfg.rescore_bbox
         cfg.rescore_bbox = True
-        t = postprocess(dets_out, w, h, visualize_lincomb = args.display_lincomb,
-                                        crop_masks        = args.crop,
-                                        score_threshold   = args.score_threshold)
+        t = postprocess(dets_out, w, h,
+                        visualize_lincomb=args.display_lincomb,
+                        crop_masks=args.crop,
+                        score_threshold=args.score_threshold)
         cfg.rescore_bbox = save
 
     with timer.env('Copy'):
         idx = t[1].argsort(0, descending=True)[:args.top_k]
 
         if cfg.eval_mask_branch:
-            # Masks are drawn on the GPU, so don't copy
             masks = t[3][idx]
         classes, scores, boxes = [x[idx].cpu().numpy() for x in t[:3]]
 
@@ -120,10 +147,17 @@ def prep_display_custom(dets_out, img, h, w, current_frame, undo_transform=True,
             mask_c = msk_c.view(1, msk_c.shape[0], msk_c.shape[1], 1)
             img_gpu_masked_c = img_gpu * (mask_c.sum(dim=0) >= 1).float().expand(-1, -1, 3)
             img_numpy_c = (img_gpu_masked_c * 255).byte().cpu().numpy()
-            img_output = img_numpy_c[(boxes[i,1]):(boxes[i,3]),(boxes[i,0]):(boxes[i,2])]
-            cv2.imwrite('../data/interim/yolact_output/20221117_front/crop/1117front'+ '_' +str(current_frame)+'_'+str(i)+'_'+str(boxes[i,0])+'_'+str(boxes[i,1])+'_'+str(boxes[i,2])+'_'+str(boxes[i,3])+'.jpg', img_output)
+            img_output = img_numpy_c[(boxes[i, 1]):(boxes[i, 3]), (boxes[i, 0]):(boxes[i, 2])]
+            cv2.imwrite(output_path
+                        + str(current_frame) + '_'
+                        + str(i) + '_'
+                        + str(boxes[i, 0]) + '_'
+                        + str(boxes[i, 1]) + '_'
+                        + str(boxes[i, 2]) + '_'
+                        + str(boxes[i, 3]) + '.jpg', img_output)
 
-        colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3) for j in range(num_dets_to_consider)], dim=0)
+        colors = torch.cat([get_color(j, on_gpu=img_gpu.device.index).view(1, 1, 1, 3)
+                            for j in range(num_dets_to_consider)], dim=0)
         masks_color = masks.repeat(1, 1, 1, 3) * colors * mask_alpha
         inv_alph_masks = masks * (-mask_alpha) + 1
 
@@ -147,7 +181,8 @@ def prep_display_custom(dets_out, img, h, w, current_frame, undo_transform=True,
     if args.display_fps:
         text_pt = (4, text_h + 2)
         text_color = [255, 255, 255]
-        cv2.putText(img_numpy, fps_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        cv2.putText(img_numpy, fps_str, text_pt, font_face,
+                    font_scale, text_color, font_thickness, cv2.LINE_AA)
 
     if num_dets_to_consider == 0:
         return img_numpy
@@ -169,16 +204,19 @@ def prep_display_custom(dets_out, img, h, w, current_frame, undo_transform=True,
                 font_scale = 0.6
                 font_thickness = 1
 
-                text_w, text_h = cv2.getTextSize(text_str, font_face, font_scale, font_thickness)[0]
+                text_w, text_h = cv2.getTextSize(text_str, font_face,
+                                                 font_scale, font_thickness)[0]
                 text_pt = (x1, y1 - 3)
                 text_color = [255, 255, 255]
 
                 cv2.rectangle(img_numpy, (x1, y1), (x1 + text_w, y1 - text_h - 4), color, -1)
-                cv2.putText(img_numpy, text_str, text_pt, font_face, font_scale, text_color, font_thickness, cv2.LINE_AA)
+                cv2.putText(img_numpy, text_str, text_pt, font_face,
+                            font_scale, text_color, font_thickness, cv2.LINE_AA)
 
     return img_numpy
 
-def evalimage(net:Yolact, path:str, save_path:str=None):
+
+def evalimage(net: Yolact, path: str, save_path: str = None):
     frame = torch.from_numpy(cv2.imread(path)).cuda().float()
     batch = FastBaseTransform()(frame.unsqueeze(0))
     preds = net(batch)
@@ -186,7 +224,8 @@ def evalimage(net:Yolact, path:str, save_path:str=None):
     img_numpy = prep_display_custom(preds, frame, None, None, undo_transform=False)
     cv2.imwrite(save_path, img_numpy)
 
-def evalimages(net:Yolact, input_folder:str, output_folder:str):
+
+def evalimages(net: Yolact, input_folder: str, output_folder: str):
     if not os.path.exists(output_folder):
         os.mkdir(output_folder)
 
@@ -201,37 +240,46 @@ def evalimages(net:Yolact, input_folder:str, output_folder:str):
         print(path + ' -> ' + out_path)
     print('Done.')
 
-def evalvideo_custom(net:Yolact, path:str, out_path:str=None):
+
+def evalvideo_custom(net: Yolact, path: str, out_path: str = None):
     vid = cv2.VideoCapture(path)
+    name = os.path.splitext(os.path.basename(path))[0]
+    crop_path = os.path.dirname(out_path) + f'/crop/{name}/'
+    if not os.path.exists(crop_path):
+        os.makedirs(crop_path)
+    print('cropped image output path:', crop_path)
 
     if not vid.isOpened():
         print('Could not open video "%s"' % path)
         exit(-1)
 
-    target_fps   = round(vid.get(cv2.CAP_PROP_FPS))
-    frame_width  = round(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+    target_fps = round(vid.get(cv2.CAP_PROP_FPS))
+    frame_width = round(vid.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = round(vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
     if out_path is not None:
-        out = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"), target_fps, (frame_width, frame_height))
+        out = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*"mp4v"),
+                              target_fps, (frame_width, frame_height))
 
     current_frame = 1
     while True:
-        print("Frame: "+ str(current_frame))
+        print("Frame:", str(current_frame))
         ret, img = vid.read()
-        if ret == False:
+        if ret is False:
             break
 
         frame = torch.from_numpy(img).cuda().float()
         batch = FastBaseTransform()(frame.unsqueeze(0))
         preds = net(batch)
-        img_numpy = prep_display_custom(preds, frame, None, None, current_frame, undo_transform=False)
+        img_numpy = prep_display_custom(preds, frame, None, None, current_frame,
+                                        crop_path, undo_transform=False)
         out.write(img_numpy)
         current_frame += 1
 
     vid.release()
     out.release()
 
-def evaluate(net:Yolact, dataset, train_mode=False):
+
+def evaluate(net: Yolact, dataset, train_mode=False):
     net.detect.use_fast_nms = args.fast_nms
     cfg.mask_proto_debug = args.mask_proto_debug
 
